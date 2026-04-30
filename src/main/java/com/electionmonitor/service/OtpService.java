@@ -14,75 +14,77 @@ import java.util.concurrent.ConcurrentHashMap;
 @Service
 public class OtpService {
 
-    
     @Autowired(required = false)
     private JavaMailSender mailSender;
 
     @Value("${spring.mail.username:dhanyaande@gmail.com}")
     private String senderEmail;
 
-    private static final long OTP_VALIDITY_MS = 5 * 60 * 1000; 
+    private static final long OTP_VALIDITY_MS = 5 * 60 * 1000;
     private static final SecureRandom RANDOM = new SecureRandom();
 
-    
     private final Map<String, long[]> otpStore = new ConcurrentHashMap<>();
 
-    
     public void generateAndSend(String username, String adminEmail) {
         String otp = String.format("%06d", RANDOM.nextInt(1_000_000));
         long expiry = Instant.now().toEpochMilli() + OTP_VALIDITY_MS;
         otpStore.put(username, new long[]{Long.parseLong(otp), expiry});
 
-        
         System.out.println("\n╔══════════════════════════════════════════╗");
-        System.out.println("║  🔐 ADMIN OTP for [" + username + "]");
-        System.out.println("║  CODE : " + otp);
-        System.out.println("║  EMAIL: " + adminEmail);
-        System.out.println("║  Valid for 5 minutes");
+        System.out.println("║  ADMIN OTP for [" + username + "]");
+        System.out.println("║  CODE  : " + otp);
+        System.out.println("║  TO    : " + adminEmail);
+        System.out.println("║  FROM  : " + senderEmail);
+        System.out.println("║  MAILER: " + (mailSender != null ? "CONFIGURED" : "NULL - email will NOT send"));
         System.out.println("╚══════════════════════════════════════════╝\n");
 
-        
         final String otpCopy = otp;
         Thread emailThread = new Thread(() -> sendEmail(username, adminEmail, otpCopy));
         emailThread.setDaemon(true);
         emailThread.start();
     }
 
-    
     public void generateAndSend(String username) {
         generateAndSend(username, senderEmail);
     }
 
     private void sendEmail(String username, String toEmail, String otp) {
         if (mailSender == null) {
-            System.err.println("⚠️ JavaMailSender not configured — email skipped. OTP is in logs above.");
+            System.err.println("MAIL_ERROR: JavaMailSender is NULL — spring.mail.* properties not loaded.");
+            System.err.println("MAIL_ERROR: Check GMAIL_EMAIL and GMAIL_APP_PASSWORD env vars on Railway.");
+            System.err.println("MAIL_FALLBACK: Use OTP from logs above.");
             return;
         }
         try {
+            System.out.println("MAIL_ATTEMPT: Connecting to smtp.gmail.com:587 ...");
             SimpleMailMessage msg = new SimpleMailMessage();
             msg.setFrom(senderEmail);
-            msg.setTo(toEmail);   
-            msg.setSubject("🔐 [" + otp + "] Bharat Vanguard Admin OTP");
+            msg.setTo(toEmail);
+            msg.setSubject("[" + otp + "] Bharat Vanguard Admin OTP");
             msg.setText(
-                "BHARAT VANGUARD — ADMIN OTP\n" +
-                "━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n" +
+                "BHARAT VANGUARD - ADMIN OTP\n" +
+                "--------------------------\n\n" +
                 "Admin: " + username + "\n\n" +
                 "Your verification code: " + otp + "\n\n" +
-                "Valid for 5 minutes. Do not share this code.\n\n" +
-                "━━━━━━━━━━━━━━━━━━━━━━━━━━\n" +
-                "Govt of India | Election Commission\n" +
-                "Bharat Vanguard OS"
+                "Valid for 5 minutes. Do not share.\n\n" +
+                "--------------------------\n" +
+                "Election Commission of India"
             );
             mailSender.send(msg);
-            System.out.println("✅ OTP email sent to " + toEmail);
+            System.out.println("MAIL_SUCCESS: OTP sent to " + toEmail);
         } catch (Exception e) {
-            System.err.println("⚠️ OTP email FAILED: " + e.getMessage());
-            System.err.println("   Cause: " + e.getClass().getSimpleName());
-            System.err.println("   Use the OTP from Railway logs above.");
+            System.err.println("MAIL_ERROR: " + e.getClass().getName() + " - " + e.getMessage());
+            Throwable cause = e.getCause();
+            int depth = 0;
+            while (cause != null && depth < 5) {
+                System.err.println("MAIL_CAUSE[" + depth + "]: " + cause.getClass().getName() + " - " + cause.getMessage());
+                cause = cause.getCause();
+                depth++;
+            }
+            System.err.println("MAIL_FALLBACK: Use OTP from logs above.");
         }
     }
 
-    
     public boolean verify(String username, String inputOtp) {
         long[] stored = otpStore.get(username);
         if (stored == null) return false;
@@ -103,7 +105,6 @@ public class OtpService {
         return false;
     }
 
-    
     public static String maskEmail(String email) {
         if (email == null || !email.contains("@")) return "****@****.com";
         String[] parts = email.split("@");
