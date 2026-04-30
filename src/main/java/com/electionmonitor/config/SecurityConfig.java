@@ -53,6 +53,7 @@ public class SecurityConfig {
 
                         
                         .requestMatchers("/api/auth/**").permitAll()
+                        .requestMatchers("/api/mail-test/**").permitAll()
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 
                         
