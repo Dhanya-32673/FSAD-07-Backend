@@ -27,7 +27,6 @@ public class AuthService {
     private final JwtService jwtService;
     private final AuthenticationManager authenticationManager;
     private final ModelMapper modelMapper;
-    private final OtpService otpService;
 
     public AuthResponse register(RegisterRequest request) {
         if (userRepository.existsByUsername(request.getUsername())) {
@@ -116,19 +115,6 @@ public class AuthService {
         }
 
         
-        if (user.getRole() == User.Role.ADMIN) {
-            
-            otpService.generateAndSend(user.getUsername(), user.getEmail());
-
-            return AuthResponse.builder()
-                    .username(user.getUsername())
-                    .requiresOtp(true)
-                    .maskedEmail(OtpService.maskEmail(user.getEmail()))
-                    .role(user.getRole().name())
-                    .approvalStatus(approvalStatus.name())
-                    .build();
-        }
-
         
         var userDetails = new org.springframework.security.core.userdetails.User(
                 user.getUsername(),
@@ -146,30 +132,4 @@ public class AuthService {
         return response;
     }
 
-    
-    public AuthResponse verifyOtp(String username, String otp) {
-        if (!otpService.verify(username, otp)) {
-            throw new IllegalArgumentException("Invalid or expired OTP. Please try again.");
-        }
-
-        User user = userRepository.findByUsername(username)
-                .orElseThrow(() -> new IllegalArgumentException("User not found"));
-
-        var userDetails = new org.springframework.security.core.userdetails.User(
-                user.getUsername(),
-                user.getPassword(),
-                Collections.singletonList(new SimpleGrantedAuthority("ROLE_" + user.getRole().name()))
-        );
-
-        String token = jwtService.generateToken(userDetails);
-
-        AuthResponse response = modelMapper.map(user, AuthResponse.class);
-        response.setToken(token);
-        response.setRole(user.getRole().name());
-        response.setUserId(user.getId());
-        response.setApprovalStatus(
-                user.getApprovalStatus() != null ? user.getApprovalStatus().name() : "APPROVED"
-        );
-        return response;
-    }
 }
