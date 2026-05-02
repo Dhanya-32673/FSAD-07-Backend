@@ -10,6 +10,7 @@ import lombok.RequiredArgsConstructor;
 import org.modelmapper.ModelMapper;
 
 import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -79,12 +80,22 @@ public class AuthService {
     }
 
     public AuthResponse login(AuthRequest request) {
-        authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(
-                        request.getIdentifier(),
-                        request.getPassword()
-                )
-        );
+        // Catch BadCredentialsException here so it becomes a 400 (via IllegalArgumentException)
+        // instead of a 401, which would trigger the frontend's 401 interceptor redirect.
+        try {
+            authenticationManager.authenticate(
+                    new UsernamePasswordAuthenticationToken(
+                            request.getIdentifier(),
+                            request.getPassword()
+                    )
+            );
+        } catch (BadCredentialsException ex) {
+            throw new IllegalArgumentException("Invalid username/email or password.");
+        } catch (org.springframework.security.authentication.DisabledException ex) {
+            throw new IllegalArgumentException("Your account has been disabled. Contact an administrator.");
+        } catch (org.springframework.security.core.AuthenticationException ex) {
+            throw new IllegalArgumentException("Authentication failed: " + ex.getMessage());
+        }
 
         User user = userRepository.findByUsername(request.getIdentifier())
                 .or(() -> userRepository.findByEmail(request.getIdentifier()))

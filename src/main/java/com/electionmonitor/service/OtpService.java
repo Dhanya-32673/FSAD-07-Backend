@@ -23,12 +23,13 @@ public class OtpService {
     private static final long OTP_VALIDITY_MS = 5 * 60 * 1000;
     private static final SecureRandom RANDOM = new SecureRandom();
 
-    private final Map<String, long[]> otpStore = new ConcurrentHashMap<>();
+    // Store OTP as String (to preserve leading zeros) and expiry as long
+    private final Map<String, String[]> otpStore = new ConcurrentHashMap<>();
 
     public void generateAndSend(String username, String adminEmail) {
         String otp = String.format("%06d", RANDOM.nextInt(1_000_000));
         long expiry = Instant.now().toEpochMilli() + OTP_VALIDITY_MS;
-        otpStore.put(username, new long[]{Long.parseLong(otp), expiry});
+        otpStore.put(username, new String[]{otp, String.valueOf(expiry)});
 
         System.out.println("\n╔══════════════════════════════════════════╗");
         System.out.println("║  ADMIN OTP for [" + username + "]");
@@ -86,22 +87,28 @@ public class OtpService {
     }
 
     public boolean verify(String username, String inputOtp) {
-        long[] stored = otpStore.get(username);
-        if (stored == null) return false;
+        String[] stored = otpStore.get(username);
+        if (stored == null) {
+            System.err.println("OTP_VERIFY: No OTP found in store for user [" + username + "]");
+            return false;
+        }
 
-        long storedOtp = stored[0];
-        long expiry    = stored[1];
+        String storedOtp = stored[0];
+        long expiry = Long.parseLong(stored[1]);
 
         if (Instant.now().toEpochMilli() > expiry) {
             otpStore.remove(username);
+            System.err.println("OTP_VERIFY: OTP expired for user [" + username + "]");
             return false;
         }
-        try {
-            if (Long.parseLong(inputOtp) == storedOtp) {
-                otpStore.remove(username);
-                return true;
-            }
-        } catch (NumberFormatException ignored) {}
+
+        if (inputOtp != null && inputOtp.trim().equals(storedOtp)) {
+            otpStore.remove(username);
+            System.out.println("OTP_VERIFY: OTP verified successfully for [" + username + "]");
+            return true;
+        }
+
+        System.err.println("OTP_VERIFY: Mismatch for [" + username + "] input=[" + inputOtp + "] expected=[" + storedOtp + "]");
         return false;
     }
 
